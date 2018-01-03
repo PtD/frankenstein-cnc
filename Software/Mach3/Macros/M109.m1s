@@ -1,0 +1,21 @@
+' Set extruder temperature
+If IsLoading() Then
+	Message("Skipping while loading")
+Else
+	setTemp = Param1()
+	Message("Setting temperature to " & setTemp)
+
+	If setTemp <= 0 Then
+		MachMsg("Invalid M109 (replace S with P?)", "", 0)
+		DoOEMButton(1021)
+	Else	
+		Message("Heating up")
+		SetOEMDRO(1810, setTemp)
+		Sleep(1000)
+		While GetOEMDRO(1812) <> 1
+			Message("Temperature is " & GetOEMDRO(1811))
+			Sleep(1000)
+		Wend
+		Message("Heated up")
+	End If	
+End If	

@@ -1,0 +1,6 @@
+' Start fan
+If IsLoading() Then
+	Message("Skipping while loading")
+Else
+	SetOEMDro(1820,1)
+End If	
