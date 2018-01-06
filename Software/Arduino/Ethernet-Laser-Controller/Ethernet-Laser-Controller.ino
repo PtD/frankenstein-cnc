@@ -50,6 +50,8 @@ unsigned char writtenLaserPwmValue = 0;
 
 boolean forceLaser = false;
 
+boolean reportXYZ = false;
+
 unsigned long dump = millis();
 
 const IPAddress ipAddress(IP_ADDRESS);
@@ -84,15 +86,17 @@ void loop() {
             if (abs(countX - whereLaserChangedX) > INIT_PWM_DISTANCE || abs(countY - whereLaserChangedY) > INIT_PWM_DISTANCE) {
                 // take care to swap the initial PWM value for the regular one after some axis moved
                 if (
-                    initLaserPwmValue != laserPwmValue 
-                    && writtenLaserPwmValue != OFF 
+                    initLaserPwmValue != laserPwmValue
+                    && writtenLaserPwmValue != OFF
                     && writtenLaserPwmValue != laserPwmValue
                  ) {
                     setLaserPwm(laserPwmValue);
                 }
             }
 
-            if (abs(deltaX) > TRANSMIT_THRESHOLD || abs(deltaY) > TRANSMIT_THRESHOLD || abs(deltaZ) > TRANSMIT_THRESHOLD) {
+            if (reportXYZ &&
+                ((deltaX) > TRANSMIT_THRESHOLD || abs(deltaY) > TRANSMIT_THRESHOLD || abs(deltaZ) > TRANSMIT_THRESHOLD)
+            ) {
                 writeXYZ(client);
             }
 
@@ -102,12 +106,15 @@ void loop() {
                     case 'z':
                         resetCoordinatesAndStopLaser();
                         break;
+
                     case '1':
                         forceUpdateLaserState(ON);
                         break;
+
                     case '0':
                         forceUpdateLaserState(OFF);
                         break;
+
                     case '=':
                     {
                         String s = client.readStringUntil('\n');
@@ -122,6 +129,7 @@ void loop() {
                         }
                         break;
                     }
+
                     case 'p':
                     {
                         // wait until there's something in the buffer
@@ -130,12 +138,15 @@ void loop() {
                         conditionalUpdateLaserState(val);
                         break;
                     }
+
                     case 'd':
                         writeXYZ(client);
                         break;
+
                     case 'a':
                         conditionalUpdateLaserState(255);
                         break;
+
                     case 'A':
                     {
                         String s = client.readStringUntil('\n');
@@ -150,6 +161,14 @@ void loop() {
                         }
                         break;
                     }
+
+                    case 'r':
+                        reportXYZ = false;
+                        break;
+
+                    case 'R':
+                        reportXYZ = true;
+                        break;
                 }
             }
 
@@ -202,14 +221,14 @@ void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0) {
         initLaserPwmValue = pwm;
     else
         initLaserPwmValue = initPwm;
-    
+
     if (!backwardZ) {
         updateLaserLevelChangeXY();
         setLaserPwm(initLaserPwmValue);
     } else {
         setLaserPwm(OFF);
     }
-    
+
 }
 
 void updateLaserOnBackwardZChange() {
@@ -321,7 +340,7 @@ void resetCoordinatesAndStopLaser() {
 
 void dumpXYZ() {
 #ifdef DEBUG
-    Serial.print(F("X:")); Serial.print(countX); 
+    Serial.print(F("X:")); Serial.print(countX);
     Serial.print(F(",Y:")); Serial.print(countY);
     Serial.print(F(",Z:")); Serial.println(countZ);
 #endif
