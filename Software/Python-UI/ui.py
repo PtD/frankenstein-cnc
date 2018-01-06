@@ -1,14 +1,16 @@
 from Tkinter import *
 import Tkinter, Tkconstants, tkFileDialog, tkMessageBox
 from ethcomm import EthComm
+from mqttcomm import MqttComm
 from imagehandler import ImageHandler
 from os import path
 
 
 class UI:
-    def __init__(self, eth_comm, img_handler):
-        self.eth_comm = eth_comm
-        self.img_handler = img_handler
+    def __init__(self):
+        self.eth_comm = EthComm()
+        self.img_handler = ImageHandler()
+        self.mqtt_comm = MqttComm(self)
 
         self.laser_mode = 0
         self.laser_state = 0
@@ -17,6 +19,7 @@ class UI:
 
         self.x = 0.0
         self.y = 0.0
+
 
         ##################################################################
         # create UI
@@ -31,13 +34,14 @@ class UI:
         label_address.grid(row=irow, column=0, sticky=E)
 
         self.entry_board_address = Entry(f)
-        self.entry_board_address.grid(row=irow, column=1, columnspan=2, sticky=W + E, padx=5)
+        self.entry_board_address.grid(row=irow, column=1, columnspan=2, sticky=W+E, padx=5)
         self.entry_board_address.insert(0, "localhost:4004")
 
         self.button_connect = Button(f, text="Connect", command=lambda: self.on_connect_clicked())
         self.button_connect.grid(row=irow, column=3, pady=10)
 
         irow += 1
+        row += 1
 
         label_address = Label(f, text="Laser on/off")
         label_address.grid(row=irow, column=0, sticky=E)
@@ -50,6 +54,9 @@ class UI:
 
         button_ctrl_auto = Button(f, text="Auto", command=lambda: self.on_laser_level_clicked(2))
         button_ctrl_auto.grid(row=irow, column=3)
+
+        button_ctrl_auto = Button(f, text="Pilot", command=lambda: self.on_laser_level_clicked(3))
+        button_ctrl_auto.grid(row=irow, column=4)
 
         irow += 1
 
@@ -77,6 +84,22 @@ class UI:
 
         self.use_init_pwm_value = Tkinter.IntVar(f, 0, "use_init_pwm")
         self.use_init_pwm_value.trace("w", lambda *args: self.on_pwm_slider_changed())
+
+        row += 1
+        irow = 0
+
+        f = LabelFrame(self.root, text="MQTT server")
+        f.grid(row=row, column=0, columnspan=1, sticky=W + E, padx=5, pady=5, ipady=5)
+
+        label_mqtt_address = Label(f, text="Host:port")
+        label_mqtt_address.grid(row=irow, column=0, sticky=E)
+
+        self.entry_mqtt_address = Entry(f)
+        self.entry_mqtt_address.grid(row=irow, column=1, columnspan=2, sticky=W+E, padx=5)
+        self.entry_mqtt_address.insert(0, "localhost:1883")
+
+        self.button_mqtt_connect = Button(f, text="Connect", command=lambda: self.on_mqtt_connect_clicked())
+        self.button_mqtt_connect.grid(row=irow, column=3, pady=10)
 
         row += 1
         irow = 0
@@ -131,23 +154,28 @@ class UI:
         f = LabelFrame(self.root, text="Current coordinates")
         f.grid(row=row, column=0, columnspan=1, sticky=W+E, padx=5, pady=5, ipady=5)
 
+        check_follow_xyz = Checkbutton(f, text="Follow XY?", onvalue=True, offvalue=False, variable="follow_xyz")
+        check_follow_xyz.grid(row=irow, column=0, columnspan=3, sticky=S+W, padx=20)
+        self.follow_xyz = Tkinter.IntVar(f, False, "follow_xyz")
+        self.follow_xyz.trace("w", lambda *args: self.on_follow_xyz_changed())
+
         label_x_curr = Label(f, text="X")
-        label_x_curr.grid(row=irow, column=0, sticky=E)
+        label_x_curr.grid(row=irow, column=3, sticky=E)
 
         label_x_curr_val = Label(f, text="0", textvariable='curr_x')
-        label_x_curr_val.grid(row=irow, column=1, sticky=W)
+        label_x_curr_val.grid(row=irow, column=4, sticky=W)
 
         label_y_curr = Label(f, text="Y")
-        label_y_curr.grid(row=irow, column=2, sticky=E)
+        label_y_curr.grid(row=irow, column=5, sticky=E)
 
         label_y_curr_val = Label(f, text="0", textvariable='curr_y')
-        label_y_curr_val.grid(row=irow, column=3, sticky=W)
+        label_y_curr_val.grid(row=irow, column=6, sticky=W)
 
         label_z_curr = Label(f, text="Z")
-        label_z_curr.grid(row=irow, column=4, sticky=E)
+        label_z_curr.grid(row=irow, column=7, sticky=E)
 
         label_z_curr_val = Label(f, text="0", textvariable='curr_z')
-        label_z_curr_val.grid(row=irow, column=5, sticky=W)
+        label_z_curr_val.grid(row=irow, column=8, sticky=W)
 
         self.curr_x = DoubleVar(f, 0, 'curr_x')
         self.curr_y = DoubleVar(f, 0, 'curr_y')
@@ -215,19 +243,39 @@ class UI:
     #
     def on_connect_clicked(self):
         if self.eth_comm.connected:
-            self.button_connect.config(text="Connect")
-            self.eth_comm.laser_off()
-            self.eth_comm.disconnect()
+            try:
+                self.button_connect.config(text="Connect")
+                self.eth_comm.laser_off()
+                self.eth_comm.disconnect()
+            except:
+                pass
         else:
             self.button_connect.config(text="Disconnect")
             self.eth_comm.connect(self.entry_board_address.get(), lambda x, y, z: self.on_xyz(x, y, z))
             self.eth_comm.laser_off()
             self.eth_comm.reset_coordinates()
+            self.on_follow_xyz_changed()
 
+    ####################################################
+    #
+    def on_mqtt_connect_clicked(self):
+        if not self.mqtt_comm.is_connected():
+            address = self.entry_mqtt_address.get()
+            try:
+                self.mqtt_comm.connect(address)
+            except:
+                tkMessageBox.showerror("Error", "Coudln't connect to %s" % address)
+        else:
+            self.mqtt_comm.disconnect()
 
     ####################################################
     #
     def on_laser_level_clicked(self, mode):
+        self.change_laser_mode(mode)
+
+    ####################################################
+    #
+    def change_laser_mode(self, mode):
         if mode == 0:
             self.eth_comm.laser_off()
         elif mode == 1:
@@ -240,6 +288,8 @@ class UI:
                 self.eth_comm.laser_auto(self.pwm_value.get(), self.init_pwm_value.get())
             else:
                 self.eth_comm.laser_auto(self.pwm_value.get())
+        elif mode == 3:
+            self.eth_comm.laser_on(10)
 
         self.laser_mode = mode
 
@@ -342,5 +392,30 @@ class UI:
             self.eth_comm.laser_off()
             self.laser_state = 0
 
+    ####################################################
+    #
+    def on_follow_xyz_changed(self):
+        self.eth_comm.follow_xyz(self.follow_xyz.get())
 
-UI(EthComm(), ImageHandler()).root.mainloop()
+    ####################################################
+    #
+    def on_mqtt_connected(self):
+        self.button_mqtt_connect.config(text="Disconnect")
+
+    ####################################################
+    #
+    def on_mqtt_disconnected(self):
+        self.button_mqtt_connect.config(text="Connect")
+
+    ####################################################
+    #
+    def set_pwm_value(self, value):
+        self.pwm_value.set(value)
+
+    ####################################################
+    #
+    def set_init_pwm_value(self, value):
+        self.init_pwm_value.set(value)
+
+
+UI().root.mainloop()

@@ -78,6 +78,17 @@ class EthComm:
 
     ############################################################
     #
+    def follow_xyz(self, do_follow):
+        if not self.connected:
+            return
+
+        if do_follow:
+            self.send_cmd('R\n')
+        else:
+            self.send_cmd('r\n')
+
+    ############################################################
+    #
     def disconnect(self):
         if not self.connected:
             return
