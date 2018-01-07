@@ -83,9 +83,11 @@ class EthComm:
             return
 
         if do_follow:
-            self.send_cmd('R\n')
+            print "Command: Report XYZ"
+            self.send_cmd('t\n')
         else:
-            self.send_cmd('r\n')
+            print "Command: Do not report XYZ"
+            self.send_cmd('n\n')
 
     ############################################################
     #

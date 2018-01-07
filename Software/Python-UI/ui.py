@@ -35,7 +35,7 @@ class UI:
 
         self.entry_board_address = Entry(f)
         self.entry_board_address.grid(row=irow, column=1, columnspan=2, sticky=W+E, padx=5)
-        self.entry_board_address.insert(0, "localhost:4004")
+        self.entry_board_address.insert(0, "10.9.9.101:4004")
 
         self.button_connect = Button(f, text="Connect", command=lambda: self.on_connect_clicked())
         self.button_connect.grid(row=irow, column=3, pady=10)
@@ -254,7 +254,7 @@ class UI:
             self.eth_comm.connect(self.entry_board_address.get(), lambda x, y, z: self.on_xyz(x, y, z))
             self.eth_comm.laser_off()
             self.eth_comm.reset_coordinates()
-            self.on_follow_xyz_changed()
+            # self.on_follow_xyz_changed()
 
     ####################################################
     #

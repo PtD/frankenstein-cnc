@@ -5,8 +5,8 @@
 #endif
 
 #include <_TrajectoryControl.h>
-#include <_Mach4View.h>
 #include <Engine.h>
+#include <_Mach4View.h>
 #include <rs274ngc.h>
 
 

@@ -86,7 +86,7 @@ void postInitControl() {
 
     mqttComm = new MQTTCommunicator(mqttServer);
     mqttComm->connect();
-    // mqttComm->subscribe();
+    mqttComm->subscribe();
 	DbgMsg(("myPostInitControl exit"));
 }
 

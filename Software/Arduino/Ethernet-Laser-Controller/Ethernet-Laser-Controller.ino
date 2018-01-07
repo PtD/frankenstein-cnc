@@ -22,9 +22,10 @@
 
 #define INIT_PWM_DISTANCE 50
 
-#define MAC_ADDRESS 0x7F,0x01,0x02,0x03,0x04,0x66
-//#define IP_ADDRESS 10,9,9,101
-#define IP_ADDRESS 192,168,13,133
+#define MAC_ADDRESS 0x39,0xE7,0xE4,0xBA,0x69,0x96 
+//#define 0x7F,0x01,0x02,0x03,0x04,0x66
+#define IP_ADDRESS 10,9,9,101
+//#define IP_ADDRESS 192,168,13,133
 #define SERVER_IP_ADDRESS 10,9,9,2
 
 volatile long countX = 0;
@@ -94,9 +95,9 @@ void loop() {
                 }
             }
 
-            if (reportXYZ &&
-                ((deltaX) > TRANSMIT_THRESHOLD || abs(deltaY) > TRANSMIT_THRESHOLD || abs(deltaZ) > TRANSMIT_THRESHOLD)
-            ) {
+            if (reportXYZ && 
+                (abs(deltaX) > TRANSMIT_THRESHOLD || abs(deltaY) > TRANSMIT_THRESHOLD || abs(deltaZ) > TRANSMIT_THRESHOLD)
+             ) {
                 writeXYZ(client);
             }
 
@@ -162,11 +163,11 @@ void loop() {
                         break;
                     }
 
-                    case 'r':
+                    case 'n':
                         reportXYZ = false;
                         break;
 
-                    case 'R':
+                    case 't':
                         reportXYZ = true;
                         break;
                 }
