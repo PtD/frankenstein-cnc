@@ -46,17 +46,20 @@ class UI:
         label_address = Label(f, text="Laser on/off")
         label_address.grid(row=irow, column=0, sticky=E)
 
-        button_ctrl_off = Button(f, text="Off", command=lambda: self.on_laser_level_clicked(0))
-        button_ctrl_off.grid(row=irow, column=1)
+        fIn = Tkinter.Frame(f)
+        fIn.grid(row=irow, column=1, columnspan=4, sticky=W+E)
+		
+        button_ctrl_off = Button(fIn, text="Off", width=5, command=lambda: self.on_laser_level_clicked(0))
+        button_ctrl_off.grid(row=0, column=0, padx=6)
 
-        button_ctrl_on = Button(f, text="On", command=lambda: self.on_laser_level_clicked(1))
-        button_ctrl_on.grid(row=irow, column=2)
+        button_ctrl_on = Button(fIn, text="On", width=5, command=lambda: self.on_laser_level_clicked(1))
+        button_ctrl_on.grid(row=0, column=1, padx=6)
 
-        button_ctrl_auto = Button(f, text="Auto", command=lambda: self.on_laser_level_clicked(2))
-        button_ctrl_auto.grid(row=irow, column=3)
+        button_ctrl_auto = Button(fIn, text="Auto", width=5, command=lambda: self.on_laser_level_clicked(2))
+        button_ctrl_auto.grid(row=0, column=2, padx=6)
 
-        button_ctrl_auto = Button(f, text="Pilot", command=lambda: self.on_laser_level_clicked(3))
-        button_ctrl_auto.grid(row=irow, column=4)
+        button_ctrl_auto = Button(fIn, text="Pilot", width=5, command=lambda: self.on_laser_level_clicked(3))
+        button_ctrl_auto.grid(row=0, column=3, padx=6)
 
         irow += 1
 
