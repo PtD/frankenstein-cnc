@@ -4,7 +4,7 @@ UI for controlling the laser control board via Ethernet
 
 
 ## How to run
-It uses Python 2.7 with PIL (Python Imaging Library). Just execute:
+It uses Python 2.7 with PIL (Python Imaging Library) and Paho MQTT libraries. Just execute:
 
 python ui.py
 
