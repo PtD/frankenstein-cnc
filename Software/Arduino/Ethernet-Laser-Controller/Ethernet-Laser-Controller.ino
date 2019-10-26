@@ -16,11 +16,17 @@
 #define ON 255
 #define OFF 0
 
-// 0.1 mm , if steps per mm are 400
-// #define TRANSMIT_THRESHOLD 10
+// How many counts by X or Y to transmit X/Y/Z coordinates
+// 1 count is 0.0025mm
 #define TRANSMIT_THRESHOLD 1
 
+// How many impulses before switching from initial to nominal PWM
+// 1 count is 0.0025 mm
 #define INIT_PWM_DISTANCE 50
+
+// how many milliseconds without movement, before laser is shut off
+// (prevents excessive burns at beginning/end of trajectory)
+#define STATIONARY_HEAD_THRESHOLD 50 
 
 #define MAC_ADDRESS 0x39,0xE7,0xE4,0xBA,0x69,0x96 
 //#define 0x7F,0x01,0x02,0x03,0x04,0x66
@@ -49,6 +55,9 @@ unsigned char laserPwmValue = 0;
 unsigned char initLaserPwmValue = 0;
 unsigned char writtenLaserPwmValue = 0;
 
+volatile unsigned long lastMovementStamp = millis();
+boolean laserStoppedBecauseHeadIsStationary = false;
+
 boolean forceLaser = false;
 
 boolean reportXYZ = false;
@@ -57,7 +66,7 @@ unsigned long dump = millis();
 
 const IPAddress ipAddress(IP_ADDRESS);
 const IPAddress serverIpAddress(SERVER_IP_ADDRESS);
-const uint8_t macAddress[6] = { MAC_ADDRESS };
+uint8_t macAddress[6] = { MAC_ADDRESS };
 EthernetServer server(4004);
 
 void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0);
@@ -78,13 +87,20 @@ void setup() {
 
 void loop() {
     EthernetClient client = server.available();
+
     if (client) {
         while (client.connected()) {
-            long deltaX = countX - lastTransmittedX;
-            long deltaY = countY - lastTransmittedY;
-            long deltaZ = countZ - lastTransmittedZ;
+            unsigned long now = millis();
+            if (now - lastMovementStamp > STATIONARY_HEAD_THRESHOLD) {
+                stopLaserBecauseHeadIsStationary();
+            } else {
+                enableLaserBecauseHeadIsMoving();
+            }
 
-            if (abs(countX - whereLaserChangedX) > INIT_PWM_DISTANCE || abs(countY - whereLaserChangedY) > INIT_PWM_DISTANCE) {
+            boolean xMovedBeyondInitialPWMDistance = abs(countX - whereLaserChangedX) > INIT_PWM_DISTANCE;
+            boolean yMovedBeyondInitialPWMDistance = abs(countY - whereLaserChangedY) > INIT_PWM_DISTANCE;
+
+            if (xMovedBeyondInitialPWMDistance || yMovedBeyondInitialPWMDistance) {
                 // take care to swap the initial PWM value for the regular one after some axis moved
                 if (
                     initLaserPwmValue != laserPwmValue
@@ -95,8 +111,12 @@ void loop() {
                 }
             }
 
-            if (reportXYZ && 
-                (abs(deltaX) > TRANSMIT_THRESHOLD || abs(deltaY) > TRANSMIT_THRESHOLD || abs(deltaZ) > TRANSMIT_THRESHOLD)
+            boolean deltaXAboveTransmitThreshold = abs(countX - lastTransmittedX) > TRANSMIT_THRESHOLD;
+            boolean deltaYAboveTransmitThreshold = abs(countY - lastTransmittedY) > TRANSMIT_THRESHOLD;
+            boolean deltaZAboveTransmitThreshold = abs(countZ - lastTransmittedZ) > TRANSMIT_THRESHOLD;
+
+            if (reportXYZ &&
+                (deltaXAboveTransmitThreshold || deltaYAboveTransmitThreshold || deltaZAboveTransmitThreshold)
              ) {
                 writeXYZ(client);
             }
@@ -105,19 +125,26 @@ void loop() {
                 int cmd = client.read();
                 switch (cmd) {
                     case 'z':
+                        // X = Y = Z = 0, laser OFF
                         resetCoordinatesAndStopLaser();
                         break;
 
                     case '1':
+                        // non-conditional laser on MAX power
                         forceUpdateLaserState(ON);
                         break;
 
                     case '0':
+                        // non-conditional turn laser off
                         forceUpdateLaserState(OFF);
                         break;
 
                     case '=':
                     {
+                        // human readable command - non-conditional laser power
+                        // =<pwm>:<initial_pwm>\n
+                        // example:
+                        // =127:32<newline>
                         String s = client.readStringUntil('\n');
                         int initIx = s.indexOf(':');
                         if (initIx > -1 && initIx < s.length() - 1) {
@@ -133,6 +160,10 @@ void loop() {
 
                     case 'p':
                     {
+                        // conditional laser power
+                        // p<byte>
+                        // example:
+                        //    p<\xFF>
                         // wait until there's something in the buffer
                         while (client.available() <= 0); // do nothing
                         int val = client.read();
@@ -141,15 +172,21 @@ void loop() {
                     }
 
                     case 'd':
+                        // dump X/Y/Z to client
                         writeXYZ(client);
                         break;
 
                     case 'a':
+                        // conditional power to MAX
                         conditionalUpdateLaserState(255);
                         break;
 
                     case 'A':
                     {
+                        // human readable command
+                        // A<pwm>:<initial pwm>\n
+                        // Example:
+                        //  A127:32<newline>
                         String s = client.readStringUntil('\n');
                         int initIx = s.indexOf(':');
                         if (initIx > -1 && initIx < s.length() - 1) {
@@ -164,10 +201,12 @@ void loop() {
                     }
 
                     case 'n':
+                        // stop reporting on X/Y/Z
                         reportXYZ = false;
                         break;
 
                     case 't':
+                        // start reporting on X/Y/Z
                         reportXYZ = true;
                         break;
                 }
@@ -178,9 +217,10 @@ void loop() {
                 updateLaserOnBackwardZChange();
             }
 
-            if (millis() - dump > 1000) {
+            // initiate coordinate dump every second
+            if (now - dump > 1000) {
                 dumpXYZ();
-                dump = millis();
+                dump = now;
             }
 
         }
@@ -192,6 +232,7 @@ void loop() {
 
 }
 
+// dump X/Y/Z to the client
 void writeXYZ(EthernetClient client) {
     client.write((const char*) &countX, 4);
     client.write((const char*) &countY, 4);
@@ -203,7 +244,8 @@ void writeXYZ(EthernetClient client) {
     dumpXYZ();
 }
 
-void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0) {
+// set non-conditional mode with given PWM and optional initial PWM
+void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm) {
     forceLaser = true;
     laserPwmValue = pwm;
     if (initPwm == 0)
@@ -215,7 +257,8 @@ void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0) {
     setLaserPwm(initLaserPwmValue);
 }
 
-void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0) {
+// set conditional mode with given PWM and optional initial PWM
+void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm) {
     forceLaser = false;
     laserPwmValue = pwm;
     if (initPwm == 0)
@@ -232,6 +275,8 @@ void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0) {
 
 }
 
+// when in conditional mode, this turns the laser on and off when the z is moving down or up
+// in non-conditional mode, this does nothing
 void updateLaserOnBackwardZChange() {
     if (forceLaser)
         return;
@@ -244,14 +289,32 @@ void updateLaserOnBackwardZChange() {
     }
 }
 
+// the real deal - here we set the laser power
 void setLaserPwm(unsigned char value) {
 #ifdef DEBUG
     Serial.print("PWM:"); Serial.println((int) 255 - value);
 #endif
-    analogWrite(PIN_LASER_TRIGGER, 255 - value);
+    if (!laserStoppedBecauseHeadIsStationary || forceLaser) 
+        analogWrite(PIN_LASER_TRIGGER, 255 - value);
     writtenLaserPwmValue = value;
 }
 
+void stopLaserBecauseHeadIsStationary() {
+    if (!forceLaser) {
+        laserStoppedBecauseHeadIsStationary = true;
+        analogWrite(PIN_LASER_TRIGGER, 255 - OFF);
+    }
+}
+
+void enableLaserBecauseHeadIsMoving() {
+    if (laserStoppedBecauseHeadIsStationary) {
+        laserStoppedBecauseHeadIsStationary = false;
+        analogWrite(PIN_LASER_TRIGGER, 255 - writtenLaserPwmValue);
+    }
+}
+
+
+// invoked whenever we trigger the laser on, so we can apply initial PWM
 void updateLaserLevelChangeXY() {
     whereLaserChangedX = countX;
     whereLaserChangedY = countY;
@@ -301,6 +364,8 @@ void countImpulsesX() {
         countX--;
     else
         countX++;
+
+    lastMovementStamp = millis();
 }
 
 void countImpulsesY() {
@@ -308,6 +373,8 @@ void countImpulsesY() {
         countY--;
     else
         countY++;
+
+    lastMovementStamp = millis();
 }
 
 void countImpulsesZ() {
