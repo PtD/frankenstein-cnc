@@ -22,11 +22,11 @@
 
 // How many impulses before switching from initial to nominal PWM
 // 1 count is 0.0025 mm
-#define INIT_PWM_DISTANCE 50
+#define INIT_PWM_DISTANCE 100
 
 // how many milliseconds without movement, before laser is shut off
 // (prevents excessive burns at beginning/end of trajectory)
-#define STATIONARY_HEAD_THRESHOLD 50 
+#define STATIONARY_HEAD_THRESHOLD 10
 
 #define MAC_ADDRESS 0x39,0xE7,0xE4,0xBA,0x69,0x96 
 //#define 0x7F,0x01,0x02,0x03,0x04,0x66
@@ -309,7 +309,8 @@ void stopLaserBecauseHeadIsStationary() {
 void enableLaserBecauseHeadIsMoving() {
     if (laserStoppedBecauseHeadIsStationary) {
         laserStoppedBecauseHeadIsStationary = false;
-        analogWrite(PIN_LASER_TRIGGER, 255 - writtenLaserPwmValue);
+        if (!backwardZ)
+            analogWrite(PIN_LASER_TRIGGER, 255 - writtenLaserPwmValue);
     }
 }
 
