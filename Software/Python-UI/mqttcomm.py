@@ -49,6 +49,8 @@ class MqttComm:
             userdata.ui_hook.set_pwm_value(int(float(msg.payload) * 255))
         elif dro == '1036':
             userdata.ui_hook.set_init_pwm_value(int(float(msg.payload) * 255))
+        elif dro == '1037':
+            userdata.ui_hook.set_dash_length(int(float(msg.payload)))
 
     ####################################################
     #

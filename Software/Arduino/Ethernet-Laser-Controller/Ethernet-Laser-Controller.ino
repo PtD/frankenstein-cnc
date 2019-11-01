@@ -1,7 +1,11 @@
 #include <PinChangeInt.h>
 #include <Ethernet.h>
 
-#define DEBUG 0
+enum Mode {
+    ALWAYS_OFF, ALWAYS_ON, AUTO
+};
+
+#define DEBUG 1
 
 #define PIN_X 2
 #define PIN_Y 3
@@ -34,6 +38,7 @@
 //#define IP_ADDRESS 192,168,13,133
 #define SERVER_IP_ADDRESS 10,9,9,2
 
+// === stuff related to movement counters ===
 volatile long countX = 0;
 volatile long countY = 0;
 volatile long countZ = 0;
@@ -42,36 +47,43 @@ volatile boolean backwardX;
 volatile boolean backwardY;
 volatile boolean backwardZ;
 
-volatile boolean backwardZChanged = false;
-
 long lastTransmittedX = 0;
 long lastTransmittedY = 0;
 long lastTransmittedZ = 0;
 
+// === stuff related to initial pwm application ===
 long whereLaserChangedX = 0;
 long whereLaserChangedY = 0;
 
-unsigned char laserPwmValue = 0;
-unsigned char initLaserPwmValue = 0;
-unsigned char writtenLaserPwmValue = 0;
+// === stuff related to pwm values ===
+unsigned char nominalSetLaserPwmValue = OFF;
+unsigned char initialSetLaserPwmValue = OFF;
+unsigned char currentSetLaserPwmValue = OFF;
+unsigned char actualLaserPwmValue = OFF;
+enum Mode mode = ALWAYS_OFF;
 
+// === stuff related to dashed lines ===
+uint32_t setDashLength = 0;
+long dashX = 0;
+long dashY = 0;
+boolean dashHigh = false;
+
+// === stuff related to stationary power prevention ===
 volatile unsigned long lastMovementStamp = millis();
-boolean laserStoppedBecauseHeadIsStationary = false;
 
-boolean forceLaser = false;
-
+// === stuff related to X/Y/Z dump ===
 boolean reportXYZ = false;
+unsigned long lastDump = millis();
 
-unsigned long dump = millis();
-
+// === stuff related to ethernet comm ===
 const IPAddress ipAddress(IP_ADDRESS);
 const IPAddress serverIpAddress(SERVER_IP_ADDRESS);
 uint8_t macAddress[6] = { MAC_ADDRESS };
 EthernetServer server(4004);
 
-void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0);
-void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm = 0);
-
+////////////////////////////////////////////////////////////////////////////////////
+// Initialization routines
+////////////////////////////////////////////////////////////////////////////////////
 void setup() {
 #ifdef DEBUG
     Serial.begin(115200);
@@ -84,155 +96,277 @@ void setup() {
 #endif
 }
 
-
+////////////////////////////////////////////////////////////////////////////////////
+// Main loop
+////////////////////////////////////////////////////////////////////////////////////
 void loop() {
     EthernetClient client = server.available();
 
     if (client) {
         while (client.connected()) {
-            unsigned long now = millis();
-            if (now - lastMovementStamp > STATIONARY_HEAD_THRESHOLD) {
-                stopLaserBecauseHeadIsStationary();
-            } else {
-                enableLaserBecauseHeadIsMoving();
-            }
-
-            boolean xMovedBeyondInitialPWMDistance = abs(countX - whereLaserChangedX) > INIT_PWM_DISTANCE;
-            boolean yMovedBeyondInitialPWMDistance = abs(countY - whereLaserChangedY) > INIT_PWM_DISTANCE;
-
-            if (xMovedBeyondInitialPWMDistance || yMovedBeyondInitialPWMDistance) {
-                // take care to swap the initial PWM value for the regular one after some axis moved
-                if (
-                    initLaserPwmValue != laserPwmValue
-                    && writtenLaserPwmValue != OFF
-                    && writtenLaserPwmValue != laserPwmValue
-                 ) {
-                    setLaserPwm(laserPwmValue);
-                }
-            }
-
-            boolean deltaXAboveTransmitThreshold = abs(countX - lastTransmittedX) > TRANSMIT_THRESHOLD;
-            boolean deltaYAboveTransmitThreshold = abs(countY - lastTransmittedY) > TRANSMIT_THRESHOLD;
-            boolean deltaZAboveTransmitThreshold = abs(countZ - lastTransmittedZ) > TRANSMIT_THRESHOLD;
-
-            if (reportXYZ &&
-                (deltaXAboveTransmitThreshold || deltaYAboveTransmitThreshold || deltaZAboveTransmitThreshold)
-             ) {
-                writeXYZ(client);
+            if (reportXYZ) {
+                doReportXYZ(client);
             }
 
             while (client.available() > 0) {
-                int cmd = client.read();
-                switch (cmd) {
-                    case 'z':
-                        // X = Y = Z = 0, laser OFF
-                        resetCoordinatesAndStopLaser();
-                        break;
-
-                    case '1':
-                        // non-conditional laser on MAX power
-                        forceUpdateLaserState(ON);
-                        break;
-
-                    case '0':
-                        // non-conditional turn laser off
-                        forceUpdateLaserState(OFF);
-                        break;
-
-                    case '=':
-                    {
-                        // human readable command - non-conditional laser power
-                        // =<pwm>:<initial_pwm>\n
-                        // example:
-                        // =127:32<newline>
-                        String s = client.readStringUntil('\n');
-                        int initIx = s.indexOf(':');
-                        if (initIx > -1 && initIx < s.length() - 1) {
-                            String pwm = s.substring(0, initIx);
-                            String initPwm = s.substring(initIx + 1);
-                            Serial.print(pwm); Serial.print(":"); Serial.println(initPwm);
-                            forceUpdateLaserState((uint8_t) pwm.toInt(), (uint8_t) initPwm.toInt());
-                        } else {
-                            forceUpdateLaserState((uint8_t) s.toInt());
-                        }
-                        break;
-                    }
-
-                    case 'p':
-                    {
-                        // conditional laser power
-                        // p<byte>
-                        // example:
-                        //    p<\xFF>
-                        // wait until there's something in the buffer
-                        while (client.available() <= 0); // do nothing
-                        int val = client.read();
-                        conditionalUpdateLaserState(val);
-                        break;
-                    }
-
-                    case 'd':
-                        // dump X/Y/Z to client
-                        writeXYZ(client);
-                        break;
-
-                    case 'a':
-                        // conditional power to MAX
-                        conditionalUpdateLaserState(255);
-                        break;
-
-                    case 'A':
-                    {
-                        // human readable command
-                        // A<pwm>:<initial pwm>\n
-                        // Example:
-                        //  A127:32<newline>
-                        String s = client.readStringUntil('\n');
-                        int initIx = s.indexOf(':');
-                        if (initIx > -1 && initIx < s.length() - 1) {
-                            String pwm = s.substring(0, initIx);
-                            String initPwm = s.substring(initIx + 1);
-                            Serial.print(pwm); Serial.print(":"); Serial.println(initPwm);
-                            conditionalUpdateLaserState((uint8_t) pwm.toInt(), (uint8_t) initPwm.toInt());
-                        } else {
-                            conditionalUpdateLaserState((uint8_t) s.toInt());
-                        }
-                        break;
-                    }
-
-                    case 'n':
-                        // stop reporting on X/Y/Z
-                        reportXYZ = false;
-                        break;
-
-                    case 't':
-                        // start reporting on X/Y/Z
-                        reportXYZ = true;
-                        break;
-                }
-            }
-
-            if (backwardZChanged) {
-                backwardZChanged = false;
-                updateLaserOnBackwardZChange();
+                handleCommands(client);
             }
 
             // initiate coordinate dump every second
-            if (now - dump > 1000) {
+            if (millis() - lastDump > 1000) {
                 dumpXYZ();
-                dump = now;
+                lastDump = millis();
             }
 
+            updateLaser();
         }
+
+        // connection is gone, turn it off
+        mode = ALWAYS_OFF;
+        updateLaser();
     } else {
-        // no client connected
-        forceUpdateLaserState(OFF);
+        // no client connected, always turn off for safety reasons
+        mode = ALWAYS_OFF;
+        updateLaser();
         delay(1000);
     }
-
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Deals with commands sent over the ethernet
+////////////////////////////////////////////////////////////////////////////////////
+void handleCommands(EthernetClient client) {
+    int cmd = client.read();
+    switch (cmd) {
+        case 'z':
+            // X = Y = Z = 0, laser OFF
+            countX = 0;
+            countY = 0;
+            countZ = 0;
+            mode = ALWAYS_OFF;
+#ifdef DEBUG
+            Serial.println("Mode: OFF; x,y,z=0");
+#endif
+            break;
+
+        case '1':
+            // non-conditional laser on MAX power
+            mode = ALWAYS_ON;
+            nominalSetLaserPwmValue = initialSetLaserPwmValue = ON;
+#ifdef DEBUG
+            Serial.println("Mode: ALWAYS_ON; Power: MAX");
+#endif
+            break;
+
+        case '0':
+            // non-conditional turn laser off
+            mode = ALWAYS_OFF;
+#ifdef DEBUG
+            Serial.println("Mode: ALWAYS_OFF");
+#endif
+            break;
+
+        case '=':
+        {
+            // human readable command - non-conditional laser power
+            // =<pwm>:<initial_pwm>\n
+            // example:
+            // =127:32<newline>
+            String s = client.readStringUntil('\n');
+            int initIx = s.indexOf(':');
+            if (initIx > -1 && initIx < s.length() - 1) {
+                String pwm = s.substring(0, initIx);
+                String initPwm = s.substring(initIx + 1);
+                Serial.print(pwm); Serial.print(":"); Serial.println(initPwm);
+                nominalSetLaserPwmValue = (uint8_t) pwm.toInt();
+                initialSetLaserPwmValue = (uint8_t) initPwm.toInt();
+            } else {
+                nominalSetLaserPwmValue = initialSetLaserPwmValue = (uint8_t) s.toInt();
+            }
+            mode = ALWAYS_ON;
+#ifdef DEBUG
+            Serial.print("Mode: ALWAYS_ON; Initial PWM: "); Serial.print(initialSetLaserPwmValue);
+            Serial.print("; Nominal PWM: "); Serial.println(nominalSetLaserPwmValue);
+#endif
+            break;
+        }
+
+        case 'p':
+        {
+            // conditional laser power
+            // p<byte>
+            // example:
+            //    p<\xFF>
+            // wait until there's something in the buffer
+            while (client.available() <= 0); // do nothing
+            nominalSetLaserPwmValue = initialSetLaserPwmValue = (uint8_t) client.read();
+            mode = AUTO;
+#ifdef DEBUG
+            Serial.print("Mode: AUTO; Initial/Nominal PWM: "); Serial.println(nominalSetLaserPwmValue);
+#endif
+            break;
+        }
+
+        case 'd':
+            // dump X/Y/Z to client
+            writeXYZ(client);
+            break;
+
+        case 'a':
+            // conditional power to MAX
+            nominalSetLaserPwmValue = initialSetLaserPwmValue = ON;
+            mode = AUTO;
+#ifdef DEBUG
+            Serial.print("Mode: AUTO; Initial/Nominal PWM: MAX");
+#endif
+            break;
+
+        case 'A':
+        {
+            // human readable command
+            // A<pwm>:<initial pwm>\n
+            // Example:
+            //  A127:32<newline>
+            String s = client.readStringUntil('\n');
+            int initIx = s.indexOf(':');
+            if (initIx > -1 && initIx < s.length() - 1) {
+                String pwm = s.substring(0, initIx);
+                String initPwm = s.substring(initIx + 1);
+                Serial.print(pwm); Serial.print(":"); Serial.println(initPwm);
+                nominalSetLaserPwmValue = (uint8_t) pwm.toInt();
+                initialSetLaserPwmValue = (uint8_t) initPwm.toInt();
+            } else {
+                nominalSetLaserPwmValue = initialSetLaserPwmValue = (uint8_t) s.toInt();
+            }
+            mode = AUTO;
+#ifdef DEBUG
+            Serial.print("Mode: AUTO; Initial PWM: "); Serial.print(initialSetLaserPwmValue);
+            Serial.print("; Nominal PWM: "); Serial.println(nominalSetLaserPwmValue);
+#endif
+            break;
+        }
+
+        case 'n':
+            // stop reporting on X/Y/Z
+            reportXYZ = false;
+#ifdef DEBUG
+            Serial.println("Don't report xyz");
+#endif
+            break;
+
+        case 't':
+            // start reporting on X/Y/Z
+            reportXYZ = true;
+#ifdef DEBUG
+            Serial.println("Report xyz");
+#endif
+            break;
+
+        case 'h':
+            // dash mode 
+            // h<length>\n
+            // example
+            // h<1234>\n -> sets dash length to 1234 counts
+            // the number is how many counts between flipping the laser on/off
+            String s = client.readStringUntil('\n');
+            setDashLength = s.toInt();
+            dashX = countX; dashY = countY;
+#ifdef DEBUG
+            Serial.print("Dash length: "); Serial.println(setDashLength);
+#endif
+            break;
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// Changes laser power levels
+////////////////////////////////////////////////////////////////////////////////////
+void updateLaser() {
+    calculateSetPower();
+
+    boolean shouldTurnOn = false;
+    //Serial.println("Turn on = false");
+    switch (mode) {
+        case ALWAYS_OFF:
+            shouldTurnOn = false;
+            break;
+        case ALWAYS_ON:
+            shouldTurnOn = true;
+            break;
+        case AUTO:
+            shouldTurnOn = !backwardZ;
+            break;
+        default:
+            break;
+    }
+    //Serial.print("Turn on (1) = "); Serial.println(shouldTurnOn);
+    if (shouldTurnOn && mode == AUTO && millis() - lastMovementStamp > STATIONARY_HEAD_THRESHOLD) {
+        // turn off based on the time during which head is not moving
+        shouldTurnOn = false;
+    }
+    //Serial.print("Turn on (2) = "); Serial.println(shouldTurnOn);
+    if (setDashLength > 0) {
+        unsigned long deltaX = abs(countX - dashX);
+        unsigned long deltaY = abs(countY - dashY);
+        if (deltaX * deltaX + deltaY * deltaY > setDashLength * setDashLength) {
+            dashHigh = !dashHigh;
+            dashX = countX;
+            dashY = countY;
+        }
+        shouldTurnOn = shouldTurnOn && dashHigh;
+    }
+    //Serial.print("Turn on (3) = "); Serial.println(shouldTurnOn);
+
+    if (shouldTurnOn) {
+        // when switching from OFF to ON, remember where did it happen, so that we can switch up from initial PWM
+        if (actualLaserPwmValue == OFF) {
+            updateLaserLevelChangeXY();
+        }
+        // only actually do something if 'set' value is different than already applied one
+        if (actualLaserPwmValue != currentSetLaserPwmValue) {
+            actualLaserPwmValue = currentSetLaserPwmValue;
+            analogWrite(PIN_LASER_TRIGGER, 255 - actualLaserPwmValue);
+#ifdef DEBUG
+            Serial.print("PWM:"); Serial.println((int) 255 - actualLaserPwmValue);
+#endif
+        }
+    } else {
+        if (actualLaserPwmValue != OFF) {
+            actualLaserPwmValue = OFF;
+            analogWrite(PIN_LASER_TRIGGER, 255 - actualLaserPwmValue);
+#ifdef DEBUG
+            Serial.print("PWM:"); Serial.println((int) 255 - actualLaserPwmValue);
+#endif
+        }
+    }
+
+    // delay(1000);
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+// Sets the desired PWM value for the laser
+// Handles transition from initial to nominal PWM 
+////////////////////////////////////////////////////////////////////////////////////
+void calculateSetPower() {
+    if (initialSetLaserPwmValue == nominalSetLaserPwmValue) {
+        if (currentSetLaserPwmValue != nominalSetLaserPwmValue) {
+            currentSetLaserPwmValue = nominalSetLaserPwmValue;
+        }
+    } else {
+        boolean xMoved = abs(countX - whereLaserChangedX);
+        boolean yMoved = abs(countY - whereLaserChangedY);
+
+        if (xMoved * xMoved + yMoved * yMoved > INIT_PWM_DISTANCE * INIT_PWM_DISTANCE) {
+            currentSetLaserPwmValue = nominalSetLaserPwmValue;
+        } else {
+            currentSetLaserPwmValue = initialSetLaserPwmValue;
+        }
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
 // dump X/Y/Z to the client
+////////////////////////////////////////////////////////////////////////////////////
 void writeXYZ(EthernetClient client) {
     client.write((const char*) &countX, 4);
     client.write((const char*) &countY, 4);
@@ -244,84 +378,19 @@ void writeXYZ(EthernetClient client) {
     dumpXYZ();
 }
 
-// set non-conditional mode with given PWM and optional initial PWM
-void forceUpdateLaserState(unsigned char pwm, unsigned char initPwm) {
-    forceLaser = true;
-    laserPwmValue = pwm;
-    if (initPwm == 0)
-        initLaserPwmValue = pwm;
-    else
-        initLaserPwmValue = initPwm;
 
-    updateLaserLevelChangeXY();
-    setLaserPwm(initLaserPwmValue);
-}
-
-// set conditional mode with given PWM and optional initial PWM
-void conditionalUpdateLaserState(unsigned char pwm, unsigned char initPwm) {
-    forceLaser = false;
-    laserPwmValue = pwm;
-    if (initPwm == 0)
-        initLaserPwmValue = pwm;
-    else
-        initLaserPwmValue = initPwm;
-
-    if (!backwardZ) {
-        updateLaserLevelChangeXY();
-        setLaserPwm(initLaserPwmValue);
-    } else {
-        setLaserPwm(OFF);
-    }
-
-}
-
-// when in conditional mode, this turns the laser on and off when the z is moving down or up
-// in non-conditional mode, this does nothing
-void updateLaserOnBackwardZChange() {
-    if (forceLaser)
-        return;
-
-    if (!backwardZ) {
-        updateLaserLevelChangeXY();
-        setLaserPwm(initLaserPwmValue);
-    } else {
-        setLaserPwm(OFF);
-    }
-}
-
-// the real deal - here we set the laser power
-void setLaserPwm(unsigned char value) {
-#ifdef DEBUG
-    Serial.print("PWM:"); Serial.println((int) 255 - value);
-#endif
-    if (!laserStoppedBecauseHeadIsStationary || forceLaser) 
-        analogWrite(PIN_LASER_TRIGGER, 255 - value);
-    writtenLaserPwmValue = value;
-}
-
-void stopLaserBecauseHeadIsStationary() {
-    if (!forceLaser) {
-        laserStoppedBecauseHeadIsStationary = true;
-        analogWrite(PIN_LASER_TRIGGER, 255 - OFF);
-    }
-}
-
-void enableLaserBecauseHeadIsMoving() {
-    if (laserStoppedBecauseHeadIsStationary) {
-        laserStoppedBecauseHeadIsStationary = false;
-        if (!backwardZ)
-            analogWrite(PIN_LASER_TRIGGER, 255 - writtenLaserPwmValue);
-    }
-}
-
-
+////////////////////////////////////////////////////////////////////////////////////
 // invoked whenever we trigger the laser on, so we can apply initial PWM
+////////////////////////////////////////////////////////////////////////////////////
 void updateLaserLevelChangeXY() {
     whereLaserChangedX = countX;
     whereLaserChangedY = countY;
 }
 
 
+////////////////////////////////////////////////////////////////////////////////////
+//
+////////////////////////////////////////////////////////////////////////////////////
 void setupEthernet() {
     Ethernet.begin(macAddress, ipAddress);
 
@@ -333,6 +402,9 @@ void setupEthernet() {
     server.begin();
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+//
+////////////////////////////////////////////////////////////////////////////////////
 void setupCounters() {
     pinMode(PIN_X, INPUT);
     pinMode(PIN_Y, INPUT);
@@ -354,12 +426,19 @@ void setupCounters() {
     backwardZ = !digitalRead(PIN_DIR_Z);
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+//
+////////////////////////////////////////////////////////////////////////////////////
 void setupLaser() {
     pinMode(PIN_LASER_TRIGGER, OUTPUT);
-    forceLaser = true;
-    forceUpdateLaserState(OFF);
+    mode = ALWAYS_OFF;
+    updateLaser();
 }
 
+
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void countImpulsesX() {
     if (backwardX)
         countX--;
@@ -369,6 +448,9 @@ void countImpulsesX() {
     lastMovementStamp = millis();
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void countImpulsesY() {
     if (backwardY)
         countY--;
@@ -378,6 +460,9 @@ void countImpulsesY() {
     lastMovementStamp = millis();
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void countImpulsesZ() {
     if (backwardZ)
         countZ++;
@@ -385,28 +470,42 @@ void countImpulsesZ() {
         countZ--;
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void directionChangedX() {
     backwardX = !digitalRead(PIN_DIR_X);
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void directionChangedY() {
     backwardY = !digitalRead(PIN_DIR_Y);
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Interrupt function
+////////////////////////////////////////////////////////////////////////////////////
 void directionChangedZ() {
-    boolean newValue = !digitalRead(PIN_DIR_Z);
-    if (newValue != backwardZ)
-        backwardZChanged = true;
-    backwardZ = newValue;
+    backwardZ = !digitalRead(PIN_DIR_Z);
 }
 
-void resetCoordinatesAndStopLaser() {
-    countX = 0;
-    countY = 0;
-    countZ = 0;
-    forceUpdateLaserState(OFF);
+void doReportXYZ(EthernetClient client) {
+    unsigned long deltaX = abs(countX - lastTransmittedX);
+    unsigned long deltaY = abs(countY - lastTransmittedY);
+    unsigned long deltaZ = abs(countZ - lastTransmittedZ);
+
+    if (deltaX * deltaX + deltaY * deltaY + deltaZ * deltaZ > TRANSMIT_THRESHOLD * TRANSMIT_THRESHOLD * TRANSMIT_THRESHOLD) {
+        writeXYZ(client);
+    }
+
+
 }
 
+////////////////////////////////////////////////////////////////////////////////////
+// Debug function
+////////////////////////////////////////////////////////////////////////////////////
 void dumpXYZ() {
 #ifdef DEBUG
     Serial.print(F("X:")); Serial.print(countX);
