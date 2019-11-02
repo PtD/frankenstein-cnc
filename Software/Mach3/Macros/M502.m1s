@@ -1,0 +1,3 @@
+' Frankenstein Laser 'dashed line' command. Param1 is the dash length in pulses
+cnt = Param1()
+SetOemDro(1837, cnt)

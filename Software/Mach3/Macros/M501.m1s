@@ -1,0 +1,9 @@
+' Frankenstein Laser 'mode' command. Param1 is the mode
+' 0 - laser off
+' 1 - laser always on
+' 2 - laser on when Z downward, laser off when Z upward
+' 3 - laser always on power 5% (pilot mode)
+
+mode = Param1()
+' Message("->" & mode)
+SetOemDro(1830, mode)

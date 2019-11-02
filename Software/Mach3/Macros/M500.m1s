@@ -1,0 +1,4 @@
+' Frankenstein Laser 'power' command. Param1 is the power, from 0 (off) to 1 (full power)
+power = Param1()
+' Message("->" & power * 255)
+SetOemDro(1835, power)
