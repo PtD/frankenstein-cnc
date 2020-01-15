@@ -44,9 +44,9 @@
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros">
-  	<Paho_IncludePath>C:\tmp\paho.mqtt.c-master\src</Paho_IncludePath>
-  	<Paho_LibraryPath>C:\tmp\paho.mqtt.c-master\Windows Build\Debug</Paho_LibraryPath>
-  	<Mach3_IncludePath>D:\SoftDev\MachPluginWizard\MachIncludes</Mach3_IncludePath>
+  	<Paho_IncludePath>D:\softdev\eclipse-paho\include</Paho_IncludePath>
+  	<Paho_LibraryPath>D:\softdev\eclipse-paho\lib</Paho_LibraryPath>
+  	<Mach3_IncludePath>D:\softdev\MachPluginWizard\MachIncludes</Mach3_IncludePath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <LinkIncremental>true</LinkIncremental>

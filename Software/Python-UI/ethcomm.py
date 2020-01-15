@@ -45,6 +45,14 @@ class EthComm:
 
     ############################################################
     #
+    def dash_length(self, length):
+        if not self.connected:
+            return
+        print "Sending dash length of %d" % length
+        self.send_cmd("h%d" % length)
+
+    ############################################################
+    #
     def reset_coordinates(self):
         if not self.connected:
             return

@@ -1,4 +1,9 @@
 **/.vs
 **/Debug
+**/Release
 **/__vm
 **/*.pyc
+**/.idea/**
+Software/Arduino/Ethernet-Laser-Controller/Ethernet-Laser-Controller.vcxproj
+Software/Arduino/Ethernet-Laser-Controller/Ethernet-Laser-Controller.vcxproj.filters
+Software/Arduino/Ethernet-Laser-Controller/Ethernet-Laser-Controller.vcxproj.user

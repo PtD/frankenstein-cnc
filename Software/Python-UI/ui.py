@@ -420,5 +420,10 @@ class UI:
     def set_init_pwm_value(self, value):
         self.init_pwm_value.set(value)
 
+    ####################################################
+    #
+    def set_dash_length(self, value):
+        self.eth_comm.dash_length(value)
+
 
 UI().root.mainloop()
