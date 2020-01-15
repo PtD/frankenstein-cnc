@@ -82,7 +82,8 @@ void initControl() {
 
 void postInitControl() {
 	// called when mach fully set up so all data can be used but initialization  outcomes not affected
-	DbgMsg(("myPostInitControl entry"));
+	DbgMsg(("myPostInitControl entry\n"));
+    DbgMsg(("Server '%s'\n", mqttServer));
 
     mqttComm = new MQTTCommunicator(mqttServer);
     mqttComm->connect();

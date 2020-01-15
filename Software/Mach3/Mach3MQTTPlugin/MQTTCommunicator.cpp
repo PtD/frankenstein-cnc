@@ -17,6 +17,7 @@ string deviceTopics = "/dev/dro/+";
  *
  */
 MQTTCommunicator::MQTTCommunicator(CString& config) {
+    mqttServerAddress = config;
     setupClient(config);
 }
 
@@ -37,8 +38,11 @@ void MQTTCommunicator::connect() {
     conn_opts.retryInterval = 0;
     conn_opts.connectTimeout = 5;
 
+    CString errorMsg = "Failed to connect to MQTT server ";
+    errorMsg.Append(mqttServerAddress);
+
     while (MQTTClient_connect(mqttClient, &conn_opts) != MQTTCLIENT_SUCCESS) {
-        int rc = MessageBox(NULL, "Failed to connect to MQTT server", "Ooops", MB_ABORTRETRYIGNORE | MB_ICONWARNING | MB_TASKMODAL);
+        int rc = MessageBox(NULL, errorMsg, "Ooops", MB_ABORTRETRYIGNORE | MB_ICONWARNING | MB_TASKMODAL);
         if (rc == IDABORT) {
             DbgMsg(("User decided to quit"));
             exit(1);

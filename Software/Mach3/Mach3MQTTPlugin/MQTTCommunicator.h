@@ -12,6 +12,7 @@ private:
     VoidShortBool	setLed;
 
     MQTTClient mqttClient;
+    CString mqttServerAddress;
 
 public:
     MQTTCommunicator(CString& config);

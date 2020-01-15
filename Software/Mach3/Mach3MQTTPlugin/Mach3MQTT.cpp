@@ -9,7 +9,7 @@
 //----------------------------------------------------------------------------
 
 // This is a Generalized Device file
-// The actual device is implemented in the file with these entries. 
+// The actual device is implemented in the file with these entries.
 // Conventionally this is ProtoImpl.cpp
 
 // Here are the routines in the implementors file
@@ -17,13 +17,13 @@
 // initial access to Mach profile
 // when enumerating available plugins
 
-extern CString profileInit(CString, CXMLProfile*);	
+extern CString profileInit(CString, CXMLProfile*);
 
 // called during Mach initialisation
 // you can influence subsequent init by actions here
 // **** Not used in typical device plugin
 
-extern void	initControl();								
+extern void	initControl();
 
 // called when mach fully set up
 
@@ -44,9 +44,9 @@ extern void	highSpeedUpdate();
 //Destruction routine for cleanup
 
 extern void cleanUp();
- 
+
 //----------------------------------------------------------------------------
- 
+
 // System Variables
 
 CXMLProfile		*DevProf;
@@ -60,8 +60,8 @@ VoidLPCSTR		Code;         // void Code("G0X10Y10");
 CXMLProfile *AppProf;
 CString ProfileName;
 
-_TrajectoryControl *trajectoryControl;	// used for most planner funcitons and program control 
-_CMach4View *view;			// used for most framework and configuration calls. 
+_TrajectoryControl *trajectoryControl;	// used for most planner funcitons and program control
+_CMach4View *view;			// used for most framework and configuration calls.
 TrajBuffer *engine;				//Ring0 memory for printer port control and other device syncronisation
 setup *vsetup;					//Trajectory planners setup block. Always in effect
 
@@ -69,15 +69,15 @@ setup *vsetup;					//Trajectory planners setup block. Always in effect
 #define new DEBUG_NEW
 #endif
 
-// Mach3 defines of External Variables. These var's are directly usable in this dll as they are all 
-// instantiated prior to this dll being opened. Most work in Mach can be done by attaching to these variables 
-// You cannot, however, call functions in these classes, they are not bound to the plugin. You may only call 
+// Mach3 defines of External Variables. These var's are directly usable in this dll as they are all
+// instantiated prior to this dll being opened. Most work in Mach can be done by attaching to these variables
+// You cannot, however, call functions in these classes, they are not bound to the plugin. You may only call
 // the functions instantiated in thsi dll. All variables and structures , however, may be used.
 // Note the way this example uses various objects.
 
 
 // Following routines are for this DLL to function properly
-// They are used to create and lock the instinces of this dll. The Dll can be loaded mumiple times, so locks are maintained. 
+// They are used to create and lock the instinces of this dll. The Dll can be loaded mumiple times, so locks are maintained.
 // Most users can ignore these functions.. Look further down for the start of the Mach callback functions.
 
 BEGIN_MESSAGE_MAP(CMach3MQTTApp, CWinApp)
@@ -159,7 +159,7 @@ STDAPI DllRegisterServer(void) {
 
 STDAPI DllUnregisterServer(void) {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
-    
+
 	if (!AfxOleUnregisterTypeLib(_tlid, _wVerMajor, _wVerMinor))
 		return SELFREG_E_TYPELIB;
 
@@ -174,27 +174,27 @@ STDAPI DllUnregisterServer(void) {
 
 // void DoButton(short code);
 extern "C" __declspec(dllexport) void SetDoButton(OneShort pFunc) {
-	DoButton = pFunc; 
+	DoButton = pFunc;
 }
 
 // void SetDRO(short code, double value);
 extern "C" __declspec(dllexport) void SetSetDRO(VoidShortDouble pFunc) {
-	SetDRO = pFunc; 
+	SetDRO = pFunc;
 }
 
 // double GetDRO(short code);
 extern "C" __declspec(dllexport) void SetGetDRO(DoubleShort pFunc) {
-	GetDRO = pFunc; 
+	GetDRO = pFunc;
 }
 
 // bool GetLED(short code);
 extern "C" __declspec(dllexport) void SetGetLED(BoolShort pFunc)  {
-	GetLED = pFunc; 
+	GetLED = pFunc;
 }
 
 // bool GetLED( short code );
 extern "C" __declspec(dllexport) void SetSetLED(VoidShortBool pFunc) {
-	SetLED = pFunc; 
+	SetLED = pFunc;
 }
 
 //----------------------------------------------------------------------------
@@ -202,13 +202,18 @@ extern "C" __declspec(dllexport) void SetSetLED(VoidShortBool pFunc) {
 // bool GetLED(short code);
 
 extern "C" __declspec(dllexport) void SetCode(VoidLPCSTR pFunc) {
-	Code = pFunc; 
+	Code = pFunc;
 }
 
 //----------------------------------------------------------------------------
 extern "C" __declspec(dllexport) char* SetProName(CString name) {
+    ProfileName = name;
+    DevProf = new CXMLProfile(); // start up the Profile class for XML usage. Same as Mach3's.
+    profileInit(name, DevProf);
+    delete DevProf;
+
     return ((char*) (LPCTSTR) (pluginName));
-}   
+}
 
 //----------------------------------------------------------------------------
 
@@ -218,16 +223,16 @@ extern "C" __declspec(dllexport) char* SetProName(CString name) {
 // Mach3 Calls to the Plugin Follow
 //
 // Tells Mach3 whether to start the printer driver in Ring 0 or not. Return false to run a different device.
-// Also gives access to parameter blocks and variables from the 4 main classes of Mach3. 
+// Also gives access to parameter blocks and variables from the 4 main classes of Mach3.
 
 //This is a timer loop set for 25ms to keep latency low. We do need to disable it though
-//if the callback loop is not running. 
+//if the callback loop is not running.
 
 //----------------------------------------------------------------------------
 extern "C" __declspec(dllexport) void StopPlug(void) {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState( ));
 
-	cleanUp(); 
+	cleanUp();
 }
 
 //----------------------------------------------------------------------------
@@ -248,7 +253,7 @@ extern "C" __declspec(dllexport) void PostInitControl() {
 	//this routine is called after Mach3 has initialised. Use it as Init, BUT no usage of the XML files at all here. Only in  Init.
 	//this routine is handy for changing variables that Mach3 has loaded at startup. Usually, Mach3 will permanently save any var's you change here..
 
-	postInitControl(); 
+	postInitControl();
 
     SetTimer(NULL, 1, 25, OnTimer);
 }
@@ -256,7 +261,7 @@ extern "C" __declspec(dllexport) void PostInitControl() {
 //----------------------------------------------------------------------------
 
 //This routine is for setting various pointers, and for shutting off the Movement Engines for an external device to use Mach3, is necessary. It
-//can interrupt things from occuring.. 
+//can interrupt things from occuring..
 
 extern "C" __declspec(dllexport) bool InitControl(void *oEngine , void *oSetup , void *oMainPlanner, void *oView) {
     AFX_MANAGE_STATE(AfxGetStaticModuleState());
@@ -267,7 +272,7 @@ extern "C" __declspec(dllexport) bool InitControl(void *oEngine , void *oSetup ,
 	trajectoryControl = (_TrajectoryControl*)(oMainPlanner);
 
 	initControl();
-	
+
 	return(TRUE);
 }
 
@@ -275,13 +280,6 @@ extern "C" __declspec(dllexport) bool InitControl(void *oEngine , void *oSetup ,
 
 extern "C" __declspec(dllexport) void Config() {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
-
-	DevProf = new  CXMLProfile(); //start up the Profile class for XML usage. Same as Mach3's. 
-
-	// XML reading and writing can occur here..
-	readConfig(DevProf);
-
-	delete DevProf; 
 }
 
 //----------------------------------------------------------------------------
@@ -291,7 +289,7 @@ extern "C" __declspec(dllexport) void Config() {
 extern "C" __declspec(dllexport) void Reset() {
 	AFX_MANAGE_STATE(AfxGetStaticModuleState());
 
-	//Called when reset is pressed, at end of actual reset commend in Mach3. 
+	//Called when reset is pressed, at end of actual reset commend in Mach3.
 	//Check the Engine.Estop variable to see if we have reset or not..
 }
 
@@ -317,20 +315,20 @@ extern "C" __declspec(dllexport) void Purge(short flags) {
 //----------------------------------------------------------------------------
 
 extern "C" __declspec(dllexport) void Probe() {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState()); 
+	AFX_MANAGE_STATE(AfxGetStaticModuleState());
 }
 
 //----------------------------------------------------------------------------
 
 extern "C" __declspec(dllexport) void Home(short axis) {
-	AFX_MANAGE_STATE(AfxGetStaticModuleState()); 
+	AFX_MANAGE_STATE(AfxGetStaticModuleState());
 }
 
 //----------------------------------------------------------------------------
 
 // This is your main update loop. Approx 10hz or so..
-// Since the Timer refresh is too low for ModIO at only 10hz, and we want smooth control at 40hz or so, 
-// we will use this loop only to shut down the main timing loop if the user disables this plugin. 
+// Since the Timer refresh is too low for ModIO at only 10hz, and we want smooth control at 40hz or so,
+// we will use this loop only to shut down the main timing loop if the user disables this plugin.
 // If the plugin gets enabled, the timer procedure is kicked into life at 25ms update, or about 40hz.
 
 // UPDATE LOOP 10 Times a Second.
